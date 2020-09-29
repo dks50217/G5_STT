@@ -18,7 +18,8 @@ import datetime
 import configparser
 import root_path
 from pytranscriber.control.ctr_logger import Ctr_Logger
-ROOT_DIR = os.path.abspath(os.curdir)
+
+
 Initfile = os.path.join(root_path.path, 'Config.ini')
 config = configparser.ConfigParser()
 config.read(Initfile,encoding="utf-8")

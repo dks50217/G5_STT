@@ -77,26 +77,27 @@ class Thread_Exec_Autosub(QThread):
         #20200720 Michael 取代預設語言
         langCode = self.objParamAutosub.langCodeList[index]
 
-        self.logger.logInfo("sourceFile: " + str(sourceFile) + " langCode: " + str(langCode))
-
+        self.logger.logInfo("sourceFile:{0},langCode:{1},Index:{2}".format(str(sourceFile),str(langCode),str(index)))
+        
         outputFiles = self.__generatePathOutputFile(sourceFile)
         outputFileSRT = outputFiles[0]
         outputFileTXT = outputFiles[1]
 
-        #有RecordID代表有客戶專員通話 反之則是RC
-        #isRecord = self._audioList[index].get('RecordId',0)
+        #有VoiceMail代表有客戶專員通話 反之則是RC
         isRecord = 'VoiceMail' not in sourceFile
 
         self.logger.logInfo("Ctr_Autosub.generate_subtitles Start: OutPutFile: " + str(outputFileSRT))
         
-
+        #20200926 加入付費Cloud API判斷
+        stt_api_version = config['api']['GoogleAPI']
         fOutput = Ctr_Autosub.generate_subtitles(source_path = sourceFile,
                                 output = outputFileSRT,
                                 src_language = langCode,
-                                listener_progress = self.listenerProgress)
+                                listener_progress = self.listenerProgress,
+                                stt_api_version = stt_api_version
+                                )
 
         self.logger.logInfo("Ctr_Autosub.generate_subtitles End")
-
 
         #if nothing was returned
         if not fOutput:

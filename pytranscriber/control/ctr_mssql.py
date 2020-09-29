@@ -33,22 +33,7 @@ class Ctr_MSSQL():
             del cursor
         else:
             return resultList
-    def InsertLog(self,errorList):
-        self.logger.logInfo('InsertTransLog')
-        conn = pyodbc.connect(self.conn_str)
-        cursor = conn.cursor()
-        cmd_prod_executesp = config['path']['InsertSPName']
-        conn.autocommit = True
-        try:
-            sql = """\
-            EXEC cmd_prod_executesp @JsonCount=?, @CallDetailID=?
-            """
-            params = ('1234','123')
-            cursor.execute(sql)
-            del cursor
-            return resultList
-        except Exception as ex:
-            self.logger.logError('錯誤 !!!!! %s' % ex)
+
     def BulkCopy(self,transcribedList,folderDate):
         self.logger.logInfo('BulkCopy Start')
         bulkList = []
@@ -75,9 +60,7 @@ class Ctr_MSSQL():
         del cursor
 
         self.logger.logInfo('BulkCopy Success: ' + str(len(bulkList)))
-    def BulkUpdate(self,unTranscribedList):
-        self.logger.logInfo('BulkUpdate Start')
-        unbulkList = []
+        
     def BulkCopy_RC(self,transcribedList,folderDate):
         self.logger.logInfo('BulkCopy_RC Start')
         bulkList = []

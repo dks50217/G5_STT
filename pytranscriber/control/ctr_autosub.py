@@ -1,6 +1,6 @@
 from autosub import FLACConverter
 from autosub import SpeechRecognizer
-# from autosub import SpeechRecognizer_V2
+from autosub import SpeechRecognizer_V2
 from autosub import extract_audio
 from autosub import find_speech_regions
 from autosub import DEFAULT_CONCURRENCY
@@ -61,7 +61,8 @@ class Ctr_Autosub():
             listener_progress,
             output=None,
             concurrency=DEFAULT_CONCURRENCY,
-            subtitle_file_format=DEFAULT_SUBTITLE_FORMAT
+            subtitle_file_format=DEFAULT_SUBTITLE_FORMAT,
+            stt_api_version = '1'
         ):
 
         # windows not support forkserver... only spawn
@@ -76,16 +77,20 @@ class Ctr_Autosub():
         Given an input audio/video file, generate subtitles in the specified language and format.
         """
         
-        #audio_filename, audio_rate = extract_audio(source_path)
         audio_filename = source_path
-        audio_rate = 8000 #int(config['autosub']['sampleRate'])
+        audio_rate = 8000
 
         regions = find_speech_regions(audio_filename)
   
-        converter = FLACConverter(source_path=audio_filename)
-        recognizer = SpeechRecognizer(language=src_language, rate=audio_rate,
+        converter = FLACConverter(source_path=audio_filename,suffix='.flac')
+
+        if stt_api_version == '1':
+            recognizer = SpeechRecognizer(language=src_language, rate=audio_rate,
                                       api_key=GOOGLE_SPEECH_API_KEY)
- 
+        else:
+            recognizer = SpeechRecognizer_V2(language=src_language, rate=audio_rate,
+                                      api_key=GOOGLE_SPEECH_API_KEY)
+
         transcripts = []
         if regions:
             try:

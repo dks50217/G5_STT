@@ -7,6 +7,10 @@ Defines autosub's main functionality.
 from __future__ import absolute_import, print_function, unicode_literals
 from pytranscriber.control.ctr_logger import Ctr_Logger
 from pytranscriber.control.ctr_record_center import Ctr_Record_Center
+
+from google.cloud import speech_v1
+from google.cloud.speech_v1 import enums
+
 import argparse
 import audioop
 import math
@@ -44,11 +48,8 @@ import root_path
 Initfile = os.path.join(root_path.path, 'Config.ini')
 config = configparser.ConfigParser()
 config.read(Initfile,encoding="utf-8")
+from auditok import split
 
-#Michael 20200722 New google Cloud API
-# from google.cloud import speech_v1
-# from google.cloud.speech_v1 import enums
-# import io
 
 
 def percentile(arr, percent):
@@ -62,8 +63,6 @@ def percentile(arr, percent):
     if floor == ceil:
         return arr[int(index)]
     
-    #TODO 顯示會有錯誤的可能性，後續找原因
-
     try:  
         low_value = arr[int(floor)] * (ceil - index)
         high_value = arr[int(ceil)] * (index - floor)
@@ -76,10 +75,11 @@ class FLACConverter(object): # pylint: disable=too-few-public-methods
     """
     Class for converting a region of an input audio or video file into a FLAC audio file
     """
-    def __init__(self, source_path, include_before=0.25, include_after=0.25):
+    def __init__(self, source_path, include_before=0.25, include_after=0.25,suffix='.flac'):
         self.source_path = source_path
         self.include_before = include_before
         self.include_after = include_after
+        self.suffix = suffix
 
     def __call__(self, region):
         try:
@@ -87,7 +87,7 @@ class FLACConverter(object): # pylint: disable=too-few-public-methods
             start = max(0, start - self.include_before)
             end += self.include_after
             #delete=False necessary for running on Windows
-            temp = tempfile.NamedTemporaryFile(suffix='.flac', delete=False)
+            temp = tempfile.NamedTemporaryFile(suffix=self.suffix, delete=False)
             program_ffmpeg = config['path']['DependenFolder'] #which("ffmpeg")
             command = [str(program_ffmpeg), "-ss", str(start), "-t", str(end - start),
                        "-y", "-i", self.source_path,
@@ -102,7 +102,6 @@ class FLACConverter(object): # pylint: disable=too-few-public-methods
 
         except Exception as e:
         #except KeyboardInterrupt:
-            self.logger.logError("FLACConverter Error: " + str(e))
             return None
 
 
@@ -124,7 +123,7 @@ class SpeechRecognizer(object): # pylint: disable=too-few-public-methods
                 try:
                     resp = requests.post(url, data=data, headers=headers)
                 except requests.exceptions.ConnectionError:
-                    self.logger.logError("SpeechRecognizer ConnectionError")
+                    #self.logger.logError("SpeechRecognizer ConnectionError")
                     continue
                 
                 for line in resp.content.decode('utf-8').split("\n"):                   
@@ -141,40 +140,46 @@ class SpeechRecognizer(object): # pylint: disable=too-few-public-methods
         except KeyboardInterrupt:
             return None
 
-#TODO 新的雲端API 1.回傳Json格式不同 2.retries要跟舊的比對一下
-#20200722 Michael (https://cloud.google.com/speech-to-text/docs)
-# class SpeechRecognizer_V2(object):
-#     def __init__(self, language="zh-TW", rate=8000, retries=3, api_key=GOOGLE_SPEECH_API_KEY):
-#         self.language = language
-#         self.rate = rate
-#         self.retries = retries
+class SpeechRecognizer_V2(object):
+    """
+    新的雲端API 1.回傳Json格式不同 2.可加標點符號 (https://cloud.google.com/speech-to-text/docs)
+    """
+    def __init__(self, language="zh-TW", rate=8000, retries=1, api_key=GOOGLE_SPEECH_API_KEY):
+        self.language = language
+        self.rate = rate
+        self.retries = retries
+        self.logger = Ctr_Logger()
 
-#     def __call__(self, data):
-#         #oAuth Json
-#         os.environ["GOOGLE_APPLICATION_CREDENTIALS"]="D:\speech-to-text\Cloud_Speech_API.json"
-#         client = speech_v1.SpeechClient()
-#         encoding = enums.RecognitionConfig.AudioEncoding.LINEAR16
-#         enable_automatic_punctuation = True
-#         enable_word_time_offsets = True
-
-#         config = {
-#             "language_code": self.language,
-#             "sample_rate_hertz": 8000,
-#             "encoding": encoding,
-#             "enable_automatic_punctuation":enable_automatic_punctuation,
-#             "enable_word_time_offsets": enable_word_time_offsets,
-#         }
-
-#         audio = {"content": data}
-
-#         response = client.recognize(config, audio)
-
-#         for result in response.results:
-#             alternative = result.alternatives[0]
-#             print(u"Transcript: {}".format(alternative.transcript))
+    def __call__(self, data):
         
-#         return ""
+        try:
+            os.environ["GOOGLE_APPLICATION_CREDENTIALS"]= config['path']['APIKeyPath']
+            client = speech_v1.SpeechClient()
+            encoding = enums.RecognitionConfig.AudioEncoding.FLAC
+            enable_automatic_punctuation = True
+            
+            #TODO 強化版模型目前zh-TW不適用
+            # use_enhanced = True
+            # stt_model = "phone_call"
 
+            stt_config = {
+                "language_code": self.language,
+                "sample_rate_hertz": int(config['autosub']['sampleRate']),
+                "encoding": encoding,
+                "enable_automatic_punctuation":enable_automatic_punctuation
+            }
+
+            audio = {"content": data}
+
+            response = client.recognize(stt_config, audio)
+
+            for result in response.results:
+                alternative = result.alternatives[0]
+                return alternative.transcript
+
+        except Exception as ex:
+            self.logger.logError("SpeechRecognizer_V2 Error: " + str(ex))
+            pass
 class Translator(object): # pylint: disable=too-few-public-methods
     """
     Class for translating a sentence from a one language to another.
@@ -272,11 +277,19 @@ def extract_audio(filename, channels=1, rate=16000):
 
     return temp.name, rate
 
-# 20200831 Michael 改用 FFmpeg 取音軌
-def find_speech_regions_V2(filename, frame_width=4096, min_region_size=0.5, max_region_size=5,percent=0.5):
+# 20200831 Michael 改用 auditok 取音軌
+def find_speech_regions_V2(filename):
     """
-    使用FFmpeg取得音軌.
+    使用auditok取得音軌.
     """
+    audio_regions = split(filename)
+    regions = []
+    for region in audio_regions:
+        region_start = float(region.get('start'))
+        region_end = float(region.get('end'))
+        regions.append((region_start,region_end))
+    return regions
+
 
 
 def find_speech_regions(filename, frame_width=4096, min_region_size=0.5, max_region_size=5,percent=0.2): # pylint: disable=too-many-locals
@@ -373,7 +386,10 @@ def generate_subtitles( # pylint: disable=too-many-locals,too-many-arguments
 
     audio_filename, audio_rate = extract_audio(source_path)
 
-    regions = find_speech_regions(audio_filename)
+    if config['autosub']['splitMethod'] == '1':
+        regions = find_speech_regions(audio_filename)
+    else:
+        regions = find_speech_regions_V2(audio_filename)
 
     pool = multiprocessing.Pool(concurrency)
     ##config['path']['DependenFolder']
